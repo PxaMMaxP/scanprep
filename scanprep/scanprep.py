@@ -5,13 +5,14 @@ import numpy as np
 import os
 import pathlib
 from pyzbar.pyzbar import decode
+import pytesseract
 
+# Enable/disable debug output.
+debug = True
 
 # Algorithm inspired by: https://dsp.stackexchange.com/a/48837
-def page_is_empty(img):
-    threshold = np.mean(ImageStat.Stat(img).mean) - 50
-    img = img.convert('L').point(lambda x: 255 if x > threshold else 0)
-
+def page_is_empty_by_image(img, pagenumber=None):
+    # Image should be in grayscale and binarized -> see `convert_img_to_grayscale_and_binarize`.
     # Staples, folds, punch holes et al. tend to be confined to the left and right margin, so we crop off 10% there.
     # Also, we crop off 5% at the top and bottom to get rid of the page borders.
     lr_margin = img.width * 0.10
@@ -27,16 +28,52 @@ def page_is_empty(img):
     total_pixels = img.size[0] * img.size[1]
     ratio = (total_pixels - white_pixels) / total_pixels
 
+    if debug:
+        print(f"P. {pagenumber} Ratio: {ratio:.5f}")
+
     return ratio < 0.005
 
+# Convert image to grayscale and binarize.
+def convert_img_to_grayscale_and_binarize(img):
+    threshold = np.mean(ImageStat.Stat(img).mean) - 50
+    return img.convert('L').point(lambda x: 255 if x > threshold else 0)
 
-def page_is_separator(img):
+# Summarizes the page detection by checking if it is empty or a separator.
+def page_is_empty(img, pagenumber=None):
+    img = convert_img_to_grayscale_and_binarize(img)
+
+    empty_by_image = page_is_empty_by_image(img, pagenumber)
+    page_text = extract_text(img)
+
+    if debug:
+        print(f"P. {pagenumber} Empty by image: {empty_by_image}")
+        print(f"P. {pagenumber} Text-Length: {len(page_text)}")
+
+    return empty_by_image and len(page_text.strip()) == 0
+
+# Check if the page is a separator by looking for a barcode with the value 'SCANPREP_SEP'.
+def page_is_separator(img, pagenumber=None):
     detected_barcodes = decode(img)
     for barcode in detected_barcodes:
         if barcode.data == b'SCANPREP_SEP':
+            if debug:
+                print(f"P. {pagenumber} Separator detected.")
             return True
+    if debug:
+        print(f"P. {pagenumber} No separator detected.")
     return False
 
+# Extract text from the image using Tesseract OCR.
+def extract_text(img):
+    # Tesseract configuration for better results with scanned documents.
+    custom_config = r'--oem 1 --psm 11 --dpi 300'
+    text = pytesseract.image_to_string(img, config=custom_config)
+
+    # Remove empty lines, all whitespace and non-alphanumeric characters.
+    text = '\n'.join(filter(lambda l: len(l) > 0, text.split('\n')))
+    text = ''.join(filter(lambda c: c.isalnum() or c.isspace(), text))
+
+    return text
 
 def get_new_docs_pages(doc, separate=True, remove_blank=True):
     docs = [[]]
@@ -46,10 +83,10 @@ def get_new_docs_pages(doc, separate=True, remove_blank=True):
         img = Image.frombytes(
             "RGB", (pixmap.width, pixmap.height), pixmap.samples)
 
-        if separate and page_is_separator(img):
+        if separate and page_is_separator(img, page.number +1):
             docs.append([])
             continue
-        if remove_blank and page_is_empty(img):
+        if remove_blank and page_is_empty(img, page.number +1):
             continue
 
         docs[-1].append(page.number)
