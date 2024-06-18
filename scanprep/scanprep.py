@@ -5,6 +5,7 @@ import numpy as np
 import os
 import pathlib
 from pyzbar.pyzbar import decode
+import pytesseract
 
 # Enable/disable debug output.
 debug = True
@@ -46,7 +47,12 @@ def brighten_image(img, factor=1.5):
 def page_is_empty(img, page_text, pagenumber=None):
     img = brighten_image(img)
     img = convert_img_to_grayscale_and_binarize(img)
+    extra_text = ''
+
     if len(page_text) == 0:
+        extra_text = extract_text(img)
+
+    if len(page_text) == 0 and len(extra_text) == 0:
         empty_by_image = page_is_empty_by_image(img, pagenumber, ratio_threshold=0.010)
     else:
         empty_by_image = page_is_empty_by_image(img, pagenumber)
@@ -54,6 +60,7 @@ def page_is_empty(img, page_text, pagenumber=None):
     if debug:
         print(f"P. {pagenumber} Empty by image: {empty_by_image}")
         print(f"P. {pagenumber} Text-Length: {len(page_text)}")
+        print(f"P. {pagenumber} Extra Text-Length: {len(extra_text)}")
 
     return empty_by_image and len(page_text.strip()) == 0
 
@@ -68,6 +75,18 @@ def page_is_separator(img, pagenumber=None):
     if debug:
         print(f"P. {pagenumber} No separator detected.")
     return False
+
+# Extract text from the image using Tesseract OCR.
+def extract_text(img):
+    # Tesseract configuration for better results with scanned documents.
+    custom_config = r'--oem 1 --psm 11 --dpi 300'
+    text = pytesseract.image_to_string(img, config=custom_config)
+
+    # Remove empty lines, all whitespace and non-alphanumeric characters.
+    text = '\n'.join(filter(lambda l: len(l) > 0, text.split('\n')))
+    text = ''.join(filter(lambda c: c.isalnum() or c.isspace(), text))
+
+    return text
 
 def get_new_docs_pages(doc, separate=True, remove_blank=True):
     docs = [[]]
