@@ -78,7 +78,7 @@ def page_is_separator(img, pagenumber=None):
 def extract_text(img):
     # Tesseract configuration for better results with scanned documents.
     custom_config = r'--oem 1 --psm 11 --dpi 300'
-    text = pytesseract.image_to_string(img, config=custom_config)
+    text = pytesseract.image_to_string(img, lang="deu", config=custom_config)
 
     # Remove empty lines, all whitespace and non-alphanumeric characters.
     text = '\n'.join(filter(lambda l: len(l) > 0, text.split('\n')))
