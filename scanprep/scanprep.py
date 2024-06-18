@@ -1,24 +1,22 @@
 import argparse
 import fitz
-from PIL import Image, ImageFilter, ImageStat
+from PIL import Image, ImageFilter, ImageEnhance, ImageStat
 import numpy as np
 import os
 import pathlib
 from pyzbar.pyzbar import decode
-import pytesseract
 
 # Enable/disable debug output.
 debug = True
 
 # Algorithm inspired by: https://dsp.stackexchange.com/a/48837
-def page_is_empty_by_image(img, pagenumber=None):
+def page_is_empty_by_image(img, pagenumber=None, ratio_threshold=0.005):
     # Image should be in grayscale and binarized -> see `convert_img_to_grayscale_and_binarize`.
     # Staples, folds, punch holes et al. tend to be confined to the left and right margin, so we crop off 10% there.
     # Also, we crop off 5% at the top and bottom to get rid of the page borders.
     lr_margin = img.width * 0.10
     tb_margin = img.height * 0.05
-    img = img.crop((lr_margin, tb_margin, img.width -
-                    lr_margin, img.height - tb_margin))
+    img = img.crop((lr_margin, tb_margin, img.width - lr_margin, img.height - tb_margin))
 
     # Use erosion and dilation to get rid of small specks but make actual text/content more significant.
     img = img.filter(ImageFilter.MaxFilter(1))
@@ -31,19 +29,27 @@ def page_is_empty_by_image(img, pagenumber=None):
     if debug:
         print(f"P. {pagenumber} Ratio: {ratio:.5f}")
 
-    return ratio < 0.005
+    return ratio < ratio_threshold
 
 # Convert image to grayscale and binarize.
 def convert_img_to_grayscale_and_binarize(img):
     threshold = np.mean(ImageStat.Stat(img).mean) - 50
     return img.convert('L').point(lambda x: 255 if x > threshold else 0)
 
-# Summarizes the page detection by checking if it is empty or a separator.
-def page_is_empty(img, pagenumber=None):
-    img = convert_img_to_grayscale_and_binarize(img)
+# Brighten image up.
+def brighten_image(img, factor=1.5):
+    enhancer = ImageEnhance.Brightness(img)
+    brightened_img = enhancer.enhance(factor)
+    return brightened_img
 
-    empty_by_image = page_is_empty_by_image(img, pagenumber)
-    page_text = extract_text(img)
+# Summarizes the page detection by checking if it is empty or a separator.
+def page_is_empty(img, page_text, pagenumber=None):
+    img = brighten_image(img)
+    img = convert_img_to_grayscale_and_binarize(img)
+    if len(page_text) == 0:
+        empty_by_image = page_is_empty_by_image(img, pagenumber, ratio_threshold=0.010)
+    else:
+        empty_by_image = page_is_empty_by_image(img, pagenumber)
 
     if debug:
         print(f"P. {pagenumber} Empty by image: {empty_by_image}")
@@ -63,36 +69,23 @@ def page_is_separator(img, pagenumber=None):
         print(f"P. {pagenumber} No separator detected.")
     return False
 
-# Extract text from the image using Tesseract OCR.
-def extract_text(img):
-    # Tesseract configuration for better results with scanned documents.
-    custom_config = r'--oem 1 --psm 11 --dpi 300'
-    text = pytesseract.image_to_string(img, config=custom_config)
-
-    # Remove empty lines, all whitespace and non-alphanumeric characters.
-    text = '\n'.join(filter(lambda l: len(l) > 0, text.split('\n')))
-    text = ''.join(filter(lambda c: c.isalnum() or c.isspace(), text))
-
-    return text
-
 def get_new_docs_pages(doc, separate=True, remove_blank=True):
     docs = [[]]
 
     for page in doc:
         pixmap = page.get_pixmap()
-        img = Image.frombytes(
-            "RGB", (pixmap.width, pixmap.height), pixmap.samples)
+        img = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
+        page_text = page.get_text("text")
 
         if separate and page_is_separator(img, page.number +1):
             docs.append([])
             continue
-        if remove_blank and page_is_empty(img, page.number +1):
+        if remove_blank and page_is_empty(img, page_text, page.number +1):
             continue
 
         docs[-1].append(page.number)
 
     return list(filter(lambda d: len(d) > 0, docs))
-
 
 def emit_new_documents(doc, filename, out_dir, separate=True, remove_blank=True):
     pathlib.Path(out_dir).mkdir(parents=True, exist_ok=True)
@@ -101,10 +94,8 @@ def emit_new_documents(doc, filename, out_dir, separate=True, remove_blank=True)
     for i, pages in enumerate(new_docs):
         new_doc = fitz.open()  # Will create a new, blank document.
         for j, page_no in enumerate(pages):
-            new_doc.insert_pdf(doc, from_page=page_no,
-                              to_page=page_no, final=(j == len(pages) - 1))
+            new_doc.insert_pdf(doc, from_page=page_no, to_page=page_no, final=(j == len(pages) - 1))
         new_doc.save(os.path.join(out_dir, f"{i}-{filename}"))
-
 
 # Taken from: https://stackoverflow.com/a/9236426
 class ActionNoYes(argparse.Action):
@@ -117,7 +108,6 @@ class ActionNoYes(argparse.Action):
             setattr(namespace, self.dest, False)
         else:
             setattr(namespace, self.dest, True)
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -132,7 +122,6 @@ def main():
 
     emit_new_documents(fitz.open(os.path.abspath(args.input_pdf)), os.path.basename(
         args.input_pdf), os.path.abspath(args.output_dir), args.separate, args.remove_blank)
-
 
 if __name__ == '__main__':
     main()
