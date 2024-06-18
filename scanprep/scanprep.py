@@ -47,12 +47,11 @@ def brighten_image(img, factor=1.5):
 def page_is_empty(img, page_text, pagenumber=None):
     img = brighten_image(img)
     img = convert_img_to_grayscale_and_binarize(img)
-    extra_text = ''
 
     if len(page_text) == 0:
-        extra_text = extract_text(img)
+        page_text = extract_text(img)
 
-    if len(page_text) == 0 and len(extra_text) == 0:
+    if len(page_text) == 0:
         empty_by_image = page_is_empty_by_image(img, pagenumber, ratio_threshold=0.010)
     else:
         empty_by_image = page_is_empty_by_image(img, pagenumber)
@@ -60,7 +59,6 @@ def page_is_empty(img, page_text, pagenumber=None):
     if debug:
         print(f"P. {pagenumber} Empty by image: {empty_by_image}")
         print(f"P. {pagenumber} Text-Length: {len(page_text)}")
-        print(f"P. {pagenumber} Extra Text-Length: {len(extra_text)}")
 
     return empty_by_image and len(page_text.strip()) == 0
 
