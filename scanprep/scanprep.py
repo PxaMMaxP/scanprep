@@ -31,7 +31,7 @@ def page_is_empty_by_image(img, pagenumber=None, ratio_threshold=0.005):
     ratio = (total_pixels - white_pixels) / total_pixels
 
     if debug:
-        print(f"P. {pagenumber} Ratio: {ratio:.5f}")
+        print(f"P. {pagenumber} Ratio: {ratio:.5f}", file=sys.stderr)
 
     return ratio < ratio_threshold
 
@@ -60,8 +60,8 @@ def page_is_empty(img, page_text, pagenumber=None):
         empty_by_image = page_is_empty_by_image(img, pagenumber)
 
     if debug:
-        print(f"P. {pagenumber} Empty by image: {empty_by_image}")
-        print(f"P. {pagenumber} Text-Length: {len(page_text)}")
+        print(f"P. {pagenumber} Empty by image: {empty_by_image}", file=sys.stderr)
+        print(f"P. {pagenumber} Text-Length: {len(page_text)}", file=sys.stderr)
 
     return empty_by_image and len(page_text.strip()) == 0
 
@@ -71,10 +71,10 @@ def page_is_separator(img, pagenumber=None):
     for barcode in detected_barcodes:
         if barcode.data == b'SCANPREP_SEP':
             if debug:
-                print(f"P. {pagenumber} Separator detected.")
+                print(f"P. {pagenumber} Separator detected.", file=sys.stderr)
             return True
     if debug:
-        print(f"P. {pagenumber} No separator detected.")
+        print(f"P. {pagenumber} No separator detected.", file=sys.stderr)
     return False
 
 # Extract text from the image using Tesseract OCR.
@@ -117,7 +117,7 @@ def emit_new_document(doc, output_file=None, remove_blank=True):
     if output_file:
         new_doc.save(output_file)
     else:
-        pdf_bytes = new_doc.convert_to_pdf()
+        pdf_bytes = new_doc.tobytes()
         sys.stdout.buffer.write(pdf_bytes)
 
 # Taken from: https://stackoverflow.com/a/9236426
@@ -146,6 +146,7 @@ def main():
             tmp_pdf.write(sys.stdin.buffer.read())
             tmp_pdf_path = tmp_pdf.name
         input_doc = fitz.open(tmp_pdf_path)
+        os.remove(tmp_pdf_path)  # Ensure the temporary file is deleted after use.
     else:
         input_doc = fitz.open(stream=args.input_pdf.read(), filetype="pdf")
 
