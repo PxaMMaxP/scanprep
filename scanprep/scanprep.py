@@ -63,7 +63,7 @@ def page_is_empty(img, page_text, pagenumber=None):
         print(f"P. {pagenumber} Empty by image: {empty_by_image}", file=sys.stderr)
         print(f"P. {pagenumber} Text-Length: {len(page_text)}", file=sys.stderr)
 
-    return empty_by_image and len(page_text.strip()) == 0
+    return empty_by_image or len(page_text.strip()) == 0
 
 # Check if the page is a separator by looking for a barcode with the value 'SCANPREP_SEP'.
 def page_is_separator(img, pagenumber=None):
