@@ -6,6 +6,9 @@ import os
 import pathlib
 from pyzbar.pyzbar import decode
 import pytesseract
+import sys
+import tempfile
+from io import BytesIO
 
 # Enable/disable debug output.
 debug = True
@@ -86,33 +89,36 @@ def extract_text(img):
 
     return text
 
-def get_new_docs_pages(doc, separate=True, remove_blank=True):
-    docs = [[]]
+def get_new_docs_pages(doc, remove_blank=True):
+    pages_to_keep = []
 
     for page in doc:
         pixmap = page.get_pixmap()
         img = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
         page_text = page.get_text("text")
 
-        if separate and page_is_separator(img, page.number +1):
-            docs.append([])
+        # if separate and page_is_separator(img, page.number + 1):
+        #     docs.append([])
+        #     continue
+        if remove_blank and page_is_empty(img, page_text, page.number + 1):
             continue
-        if remove_blank and page_is_empty(img, page_text, page.number +1):
-            continue
 
-        docs[-1].append(page.number)
+        pages_to_keep.append(page.number)
 
-    return list(filter(lambda d: len(d) > 0, docs))
+    return pages_to_keep
 
-def emit_new_documents(doc, filename, out_dir, separate=True, remove_blank=True):
-    pathlib.Path(out_dir).mkdir(parents=True, exist_ok=True)
+def emit_new_document(doc, output_file=None, remove_blank=True):
+    new_doc = fitz.open()  # Create a new, blank document.
+    pages_to_keep = get_new_docs_pages(doc, remove_blank)
 
-    new_docs = get_new_docs_pages(doc, separate, remove_blank)
-    for i, pages in enumerate(new_docs):
-        new_doc = fitz.open()  # Will create a new, blank document.
-        for j, page_no in enumerate(pages):
-            new_doc.insert_pdf(doc, from_page=page_no, to_page=page_no, final=(j == len(pages) - 1))
-        new_doc.save(os.path.join(out_dir, f"{i}-{filename}"))
+    for page_no in pages_to_keep:
+        new_doc.insert_pdf(doc, from_page=page_no, to_page=page_no)
+
+    if output_file:
+        new_doc.save(output_file)
+    else:
+        pdf_bytes = new_doc.convert_to_pdf()
+        sys.stdout.buffer.write(pdf_bytes)
 
 # Taken from: https://stackoverflow.com/a/9236426
 class ActionNoYes(argparse.Action):
@@ -128,17 +134,26 @@ class ActionNoYes(argparse.Action):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('input_pdf', help='The PDF document to process.')
-    parser.add_argument(
-        'output_dir', help='The directory where the output documents will be saved. (defaults to the current directory)', nargs='?', default=os.getcwd())
-    parser._add_action(ActionNoYes('page-separation', 'separate',
-                                   help='Do (or do not) split document into separate files by the included separator pages. (default yes)'))
+    parser.add_argument('input_pdf', nargs='?', type=argparse.FileType('rb'), default=sys.stdin.buffer, help='The PDF document to process. Use "-" or omit to read from stdin.')
+    parser.add_argument('output_pdf', nargs='?', help='The output PDF file. If omitted or "-", output to stdout.')
     parser._add_action(ActionNoYes('blank-removal', 'remove_blank',
                                    help='Do (or do not) remove empty pages from the output. (default yes)'))
     args = parser.parse_args()
 
-    emit_new_documents(fitz.open(os.path.abspath(args.input_pdf)), os.path.basename(
-        args.input_pdf), os.path.abspath(args.output_dir), args.separate, args.remove_blank)
+    # Read input PDF from stdin or file
+    if args.input_pdf == sys.stdin.buffer:
+        with tempfile.NamedTemporaryFile(delete=False) as tmp_pdf:
+            tmp_pdf.write(sys.stdin.buffer.read())
+            tmp_pdf_path = tmp_pdf.name
+        input_doc = fitz.open(tmp_pdf_path)
+    else:
+        input_doc = fitz.open(stream=args.input_pdf.read(), filetype="pdf")
+
+    # Determine output destination
+    if args.output_pdf in [None, '-']:
+        emit_new_document(input_doc, None, args.remove_blank)
+    else:
+        emit_new_document(input_doc, args.output_pdf, args.remove_blank)
 
 if __name__ == '__main__':
     main()
