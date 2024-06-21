@@ -26,6 +26,7 @@ setuptools.setup(
         'numpy>=1.26.1',
         'pillow>=10.1.0',
         'pymupdf>=1.23.5',
-        'pyzbar>=0.1.9'
+        'pyzbar>=0.1.9',
+        'pytesseract>=0.3.10'
     ]
 )
