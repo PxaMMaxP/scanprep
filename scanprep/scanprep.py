@@ -13,8 +13,15 @@ from io import BytesIO
 # Enable/disable debug output.
 debug = True
 
+# Default Ratios Threshold for empty pages.
+default_ratio_threshold = 0.005
+default_ratio_threshold_extra_text = 0.010
+
+def page_is_empty_by_image(ratio, ratio_threshold=default_ratio_threshold):
+    return ratio < ratio_threshold
+
 # Algorithm inspired by: https://dsp.stackexchange.com/a/48837
-def page_is_empty_by_image(img, pagenumber=None, ratio_threshold=0.005):
+def calculate_ratio(img, pagenumber=None):
     # Image should be in grayscale and binarized -> see `convert_img_to_grayscale_and_binarize`.
     # Staples, folds, punch holes et al. tend to be confined to the left and right margin, so we crop off 10% there.
     # Also, we crop off 5% at the top and bottom to get rid of the page borders.
@@ -33,7 +40,7 @@ def page_is_empty_by_image(img, pagenumber=None, ratio_threshold=0.005):
     if debug:
         print(f"P. {pagenumber} Ratio: {ratio:.5f}", file=sys.stderr)
 
-    return ratio < ratio_threshold
+    return ratio
 
 # Convert image to grayscale and binarize.
 def convert_img_to_grayscale_and_binarize(img):
@@ -50,14 +57,17 @@ def brighten_image(img, factor=1.5):
 def page_is_empty(img, page_text, pagenumber=None):
     img = brighten_image(img)
     img = convert_img_to_grayscale_and_binarize(img)
+    ratio = calculate_ratio(img, pagenumber)
 
-    if len(page_text) == 0:
+    if len(page_text) == 0 and ratio > default_ratio_threshold:
+        if debug:
+            print(f"P. {pagenumber} extract extra text..", file=sys.stderr)
         page_text = extract_text(img)
 
     if len(page_text) == 0:
-        empty_by_image = page_is_empty_by_image(img, pagenumber, ratio_threshold=0.010)
+        empty_by_image = page_is_empty_by_image(ratio, ratio_threshold=default_ratio_threshold_extra_text)
     else:
-        empty_by_image = page_is_empty_by_image(img, pagenumber)
+        empty_by_image = page_is_empty_by_image(ratio)
 
     if debug:
         print(f"P. {pagenumber} Empty by image: {empty_by_image}", file=sys.stderr)
