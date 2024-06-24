@@ -121,6 +121,10 @@ def emit_new_document(doc, output_file=None, remove_blank=True):
     new_doc = fitz.open()  # Create a new, blank document.
     pages_to_keep = get_new_docs_pages(doc, remove_blank)
 
+    if not pages_to_keep:
+        print("No pages to keep.", file=sys.stderr)
+        return
+
     for page_no in pages_to_keep:
         new_doc.insert_pdf(doc, from_page=page_no, to_page=page_no)
 
